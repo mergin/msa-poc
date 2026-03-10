@@ -230,6 +230,10 @@ mvn -pl gateway-service test
 - **Controller tests** for REST contract + not-found behavior
 - **Gateway context test**
 
+## Scripting: Bash vs Python
+
+See [BASH_VS_PYTHON.md](./BASH_VS_PYTHON.md) for a detailed comparison of when to use Bash versus Python for scripts in this project (service startup, smoke tests, CI automation, etc.).
+
 ## Notes
 
 - Business services are fully reactive (`Mono`/`Flux`) from controller to repository contract.
