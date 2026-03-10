@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: accounts-service
+  r2dbc:
+    url: ${ACCOUNTS_R2DBC_URL:r2dbc:postgresql://localhost:5434/accountsdb}
+    username: ${ACCOUNTS_DB_USER:msa}
+    password: ${ACCOUNTS_DB_PASSWORD:msa}
+  sql:
+    init:
+      mode: always
+  profiles:
+    default: postgres
+server:
+  port: 8082
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

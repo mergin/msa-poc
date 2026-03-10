@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: customers-service
+  r2dbc:
+    url: ${CUSTOMERS_R2DBC_URL:r2dbc:postgresql://localhost:5433/customersdb}
+    username: ${CUSTOMERS_DB_USER:msa}
+    password: ${CUSTOMERS_DB_PASSWORD:msa}
+  sql:
+    init:
+      mode: always
+  profiles:
+    default: postgres
+server:
+  port: 8081
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

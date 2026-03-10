@@ -1,0 +1,30 @@
+services:
+  postgres-customers:
+    image: postgres:16
+    container_name: msa-postgres-customers
+    environment:
+      POSTGRES_DB: customersdb
+      POSTGRES_USER: msa
+      POSTGRES_PASSWORD: msa
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U msa -d customersdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres-accounts:
+    image: postgres:16
+    container_name: msa-postgres-accounts
+    environment:
+      POSTGRES_DB: accountsdb
+      POSTGRES_USER: msa
+      POSTGRES_PASSWORD: msa
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U msa -d accountsdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

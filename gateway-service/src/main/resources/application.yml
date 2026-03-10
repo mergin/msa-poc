@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: gateway-service
+  cloud:
+    gateway:
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedOrigins: "http://localhost:4200,http://localhost:4201,http://localhost:4202"
+            allowedMethods: "GET,OPTIONS"
+            allowedHeaders: "*"
+      routes:
+        - id: customers-service
+          uri: http://localhost:8081
+          predicates:
+            - Path=/v1/customers/**
+          filters:
+            - StripPrefix=1
+        - id: accounts-service
+          uri: http://localhost:8082
+          predicates:
+            - Path=/v1/accounts/**
+          filters:
+            - StripPrefix=1
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
