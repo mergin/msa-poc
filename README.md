@@ -1,5 +1,7 @@
 # MSA PoC (Spring Boot + Reactive DDD)
 
+[![CI](https://github.com/mergin/msa-poc/actions/workflows/ci.yml/badge.svg)](https://github.com/mergin/msa-poc/actions/workflows/ci.yml)
+
 Microservices proof-of-concept for the Angular MFE app in `mfe-poc`.
 
 It implements the backend contract used by the frontends for:
@@ -149,6 +151,16 @@ This keeps transport/infrastructure concerns separate from core domain logic.
 
 - Java 21+
 - Maven 3.9+
+
+## CI
+
+GitHub Actions runs the `CI` workflow on push and pull requests.
+
+- Workflow file: `.github/workflows/ci.yml`
+
+- Uses Java 21 with Maven dependency cache
+- Executes `mvn -B -ntp test`
+- Uses `in-memory` profile in CI to keep test execution deterministic and independent from external databases
 
 ## How to run
 
