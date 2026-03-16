@@ -57,21 +57,21 @@ API Gateway -> Client
 
 ```mermaid
 flowchart TD
-    C[Client\nMFE / curl] -->|GET /v1/customers/{id}| G[API Gateway\ngateway-service:8080]
-    G -->|Path /v1/customers/**\nStripPrefix=1| S[customers-service:8081]
-    S --> I[interfaces\nCustomerController]
-    I --> A[application\nGetCustomerByIdUseCase / ListCustomersUseCase]
-    A --> D[domain\nCustomer + CustomerRepository]
-    D --> R[infrastructure\nPostgresCustomerRepository]
+  C["Client<br/>MFE / curl"] -->|"GET /v1/customers/{id}"| G["API Gateway<br/>gateway-service:8080"]
+  G -->|"Path /v1/customers/**<br/>StripPrefix=1"| S["customers-service:8081"]
+  S --> I["interfaces<br/>CustomerController"]
+  I --> A["application<br/>GetCustomerByIdUseCase / ListCustomersUseCase"]
+  A --> D["domain<br/>Customer + CustomerRepository"]
+  D --> R["infrastructure<br/>PostgresCustomerRepository"]
     R --> E[Response DTO / Not Found]
     E --> G
     G --> C
 
-    G -->|Path /v1/accounts/**\nStripPrefix=1| SA[accounts-service:8082]
-    SA --> IA[interfaces\nAccountController]
-    IA --> AA[application\nGetAccountByIdUseCase / ListAccountsUseCase]
-    AA --> DA[domain\nAccount + AccountRepository]
-    DA --> RA[infrastructure\nPostgresAccountRepository]
+  G -->|"Path /v1/accounts/**<br/>StripPrefix=1"| SA["accounts-service:8082"]
+  SA --> IA["interfaces<br/>AccountController"]
+  IA --> AA["application<br/>GetAccountByIdUseCase / ListAccountsUseCase"]
+  AA --> DA["domain<br/>Account + AccountRepository"]
+  DA --> RA["infrastructure<br/>PostgresAccountRepository"]
     RA --> EA[Response DTO / Not Found]
     EA --> G
 ```
@@ -94,7 +94,7 @@ sequenceDiagram
   CCtrl-->>GW: 200 DTO or 404 message
   GW-->>Client: HTTP response
 
-  Note over GW: Same pattern for /v1/accounts/** \nvia AccountController and account use cases
+  Note over GW: Same pattern for /v1/accounts/**<br/>via AccountController and account use cases
 ```
 
 Same flow applies to `/v1/accounts/**`, routed to `accounts-service` (8082).
