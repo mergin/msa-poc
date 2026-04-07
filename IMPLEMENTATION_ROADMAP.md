@@ -230,9 +230,9 @@ so that a slow or unavailable `customers-service` degrades gracefully instead of
 
 ### 2.5 — Write an integration test for the circuit breaker fallback
 
-- [ ] Use `WireMock` (or `MockWebServer` from OkHttp) to simulate a failing `customers-service`
+- [x] Use `WireMock` (or `MockWebServer` from OkHttp) to simulate a failing `customers-service`
   and assert that the circuit opens after the configured threshold and that the fallback is invoked.
-- [ ] Add test dependency to `accounts-service/pom.xml`:
+- [x] Add test dependency to `accounts-service/pom.xml`:
   ```xml
   <dependency>
     <groupId>org.wiremock</groupId>
@@ -392,15 +392,15 @@ use a shared HMAC-SHA256 secret for the PoC.
       secret, algorithm="HS256")
   print(token)
   ```
-- [ ] Confirm a request with the token succeeds:
+- [x] Confirm a request with the token succeeds:
   ```bash
   curl -H "Authorization: Bearer <token>" http://localhost:8080/v1/accounts
   ```
-- [ ] Confirm a request without a token returns `401`.
+- [x] Confirm a request without a token returns `401`.
 
 ### 4.5 — Write a `@WebFluxTest` for `SecurityConfig`
 
-- [ ] Add a test that mocks the downstream routes and asserts:
+- [x] Add a test that mocks the downstream routes and asserts:
   - `GET /v1/accounts` without a token → `401 Unauthorized`.
   - `GET /v1/accounts` with a valid token → routed (not `401`/`403`).
   - `GET /actuator/health` without a token → `200 OK`.

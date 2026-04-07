@@ -350,6 +350,8 @@ mvn -pl gateway-service test
 - **Controller tests** for REST contract + not-found behavior
 - **Gateway context test**
 - `GetAccountOwnerUseCaseTest` covers three scenarios: happy path, account not found (`404`), and customers-service unavailable (`503` fallback)
+- `CustomersClientIntegrationTest` — WireMock-backed integration test covering happy path, `5xx` fallback, and `4xx` fallback
+- `SecurityConfigTest` — `@SpringBootTest` verifying `401` for unauthenticated requests, public `/actuator/health`, and security layer pass-through for valid JWT
 
 ## Notes
 
