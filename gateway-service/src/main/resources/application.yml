@@ -22,6 +22,15 @@ spring:
             - Path=/v1/accounts/**
           filters:
             - StripPrefix=1
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # 256-bit Base64-encoded HMAC-SHA256 secret
+          # Override via JWT_SECRET env var in any non-local environment
+          secret: ${JWT_SECRET:bXNhLXBvYy1zZWNyZXQta2V5LWF0LWxlYXN0LTI1Ni1iaXRz}
+  zipkin:
+    base-url: ${ZIPKIN_BASE_URL:http://localhost:9411}
 
 server:
   port: 8080
@@ -31,3 +40,6 @@ management:
     web:
       exposure:
         include: health,info,gateway
+  tracing:
+    sampling:
+      probability: 1.0

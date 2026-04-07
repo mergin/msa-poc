@@ -10,10 +10,41 @@ spring:
       mode: always
   profiles:
     default: postgres
+
+clients:
+  customers:
+    base-url: ${CUSTOMERS_BASE_URL:http://localhost:8081}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      customersClient:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+  retry:
+    instances:
+      customersClient:
+        max-attempts: 3
+        wait-duration: 200ms
+
 server:
   port: 8082
+
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,circuitbreakers,retries
+  health:
+    circuitbreakers:
+      enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+
+spring:
+  zipkin:
+    base-url: ${ZIPKIN_BASE_URL:http://localhost:9411}

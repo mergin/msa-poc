@@ -1,7 +1,9 @@
 package com.example.accountsservice.interfaces.rest;
 
 import com.example.accountsservice.application.usecase.GetAccountByIdUseCase;
+import com.example.accountsservice.application.usecase.GetAccountOwnerUseCase;
 import com.example.accountsservice.application.usecase.ListAccountsUseCase;
+import com.example.accountsservice.interfaces.rest.dto.AccountOwnerResponse;
 import com.example.accountsservice.interfaces.rest.dto.AccountResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,11 +19,15 @@ public class AccountController {
 
   private final ListAccountsUseCase listAccountsUseCase;
   private final GetAccountByIdUseCase getAccountByIdUseCase;
+  private final GetAccountOwnerUseCase getAccountOwnerUseCase;
 
   public AccountController(
-      ListAccountsUseCase listAccountsUseCase, GetAccountByIdUseCase getAccountByIdUseCase) {
+      ListAccountsUseCase listAccountsUseCase,
+      GetAccountByIdUseCase getAccountByIdUseCase,
+      GetAccountOwnerUseCase getAccountOwnerUseCase) {
     this.listAccountsUseCase = listAccountsUseCase;
     this.getAccountByIdUseCase = getAccountByIdUseCase;
+    this.getAccountOwnerUseCase = getAccountOwnerUseCase;
   }
 
   @GetMapping
@@ -33,5 +39,10 @@ public class AccountController {
   @GetMapping("/{id}")
   public Mono<AccountResponse> getAccountById(@PathVariable String id) {
     return getAccountByIdUseCase.execute(id).map(AccountResponse::fromDomain);
+  }
+
+  @GetMapping("/{id}/owner")
+  public Mono<AccountOwnerResponse> getAccountOwner(@PathVariable String id) {
+    return getAccountOwnerUseCase.execute(id);
   }
 }

@@ -28,3 +28,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  zipkin:
+    image: openzipkin/zipkin:3
+    container_name: msa-zipkin
+    ports:
+      - "9411:9411"
