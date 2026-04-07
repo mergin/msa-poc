@@ -22,6 +22,12 @@ spring:
             - Path=/v1/accounts/**
           filters:
             - StripPrefix=1
+        - id: transactions-service
+          uri: http://localhost:8083
+          predicates:
+            - Path=/v1/transactions/**
+          filters:
+            - StripPrefix=1
   security:
     oauth2:
       resourceserver:

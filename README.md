@@ -11,6 +11,13 @@ It implements the backend contract used by the frontends for:
 - `GET /v1/accounts`
 - `GET /v1/accounts/{id}`
 - `GET /v1/accounts/{id}/owner` — cross-service call enriching the account with its owner's customer data
+- `GET /v1/transactions` — paginated transaction list
+- `GET /v1/transactions/{id}` — single transaction by ID
+- `GET /v1/transactions/{accountId}/running-balance` — per-transaction cumulative balance (SQL window function)
+- `GET /v1/transactions/{accountId}/monthly-summary` — monthly debit/credit/net aggregation (`GROUP BY DATE_TRUNC`)
+- `GET /v1/transactions/top-accounts` — accounts ranked by total volume (`GROUP BY … ORDER BY SUM DESC`)
+- `GET /v1/transactions/{accountId}/anomalies` — statistical outliers (amount > mean + 2 × stddev)
+- `GET /v1/transactions/search` — multi-criteria dynamic query with optional filters
 
 The project is built with a reactive Spring Boot stack and a DDD-inspired structure.
 
@@ -21,8 +28,9 @@ Angular MFEs (4200/4201/4202)
           |
           v
    API Gateway (8080)
-      /v1/customers/**  -> customers-service (8081)
-      /v1/accounts/**   -> accounts-service  (8082)
+      /v1/customers/**     -> customers-service     (8081)
+      /v1/accounts/**      -> accounts-service      (8082)
+      /v1/transactions/**  -> transactions-service  (8083)
 ```
 
 ### Microservice request flow schema
@@ -104,7 +112,7 @@ Same flow applies to `/v1/accounts/**`, routed to `accounts-service` (8082).
 
 - `gateway-service`
   - Spring Cloud Gateway
-  - Routes `/v1/customers/**` and `/v1/accounts/**`
+  - Routes `/v1/customers/**`, `/v1/accounts/**`, and `/v1/transactions/**`
   - Central CORS for local MFE origins
   - JWT authentication via Spring Security OAuth2 Resource Server (HMAC-SHA256)
 - `customers-service`
@@ -116,10 +124,15 @@ Same flow applies to `/v1/accounts/**`, routed to `accounts-service` (8082).
   - DDD layers: domain, application, infrastructure, interfaces
   - PostgreSQL adapter via R2DBC (`PostgresAccountRepository`)
   - `infrastructure/client` — `CustomersClient` (WebClient + Resilience4j circuit breaker)
+- `transactions-service`
+  - Reactive WebFlux API + reactive use cases
+  - DDD layers: domain, application, infrastructure, interfaces
+  - PostgreSQL adapter via R2DBC with raw `DatabaseClient` for complex analytical queries
+  - Window functions, aggregations, statistical anomaly detection, and dynamic multi-filter search
 
 ## DDD layering used in each bounded context
 
-Each business service (`customers-service`, `accounts-service`) follows this package structure:
+Each business service (`customers-service`, `accounts-service`, `transactions-service`) follows this package structure:
 
 - `domain`
   - Entities/value objects and repository interfaces
@@ -154,6 +167,85 @@ This keeps transport/infrastructure concerns separate from core domain logic.
   - Response: `{ accountId, accountNumber, ownerId, ownerFirstName, ownerLastName, ownerEmail }`
   - `404` when the account does not exist.
   - `503` when `customers-service` is unreachable (circuit breaker open or fallback empty).
+
+## transactions-service
+
+`transactions-service` (port **8083**) is a dedicated analytical microservice that showcases
+complex relational query patterns using Spring Data R2DBC's `DatabaseClient` with raw SQL.
+
+### Domain model
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `String` | UUID primary key |
+| `accountId` | `String` | Foreign key to accounts domain |
+| `type` | `TransactionType` | `CREDIT` or `DEBIT` |
+| `amount` | `BigDecimal` | Positive decimal |
+| `currency` | `String` | ISO-4217 code (e.g. `EUR`) |
+| `description` | `String` | Free-text label |
+| `timestamp` | `LocalDateTime` | Transaction time |
+| `category` | `String` | e.g. `GROCERIES`, `SALARY` |
+
+Seed data: **1 000 rows** across 5 accounts via `generate_series` in `data.sql`.
+Every 47th row has an outlier amount (×10) to ensure the anomaly-detection endpoint returns results.
+
+### Endpoints and SQL techniques
+
+| Endpoint | Method | SQL technique |
+|---|---|---|
+| `/transactions` | GET | Simple `ORDER BY` + `LIMIT`/`OFFSET` |
+| `/transactions/{id}` | GET | Primary-key lookup |
+| `/transactions/{accountId}/running-balance` | GET | Window function: `SUM(signed_amount) OVER (PARTITION BY account_id ORDER BY timestamp ROWS UNBOUNDED PRECEDING)` |
+| `/transactions/{accountId}/monthly-summary` | GET | `GROUP BY DATE_TRUNC('month', timestamp)` with conditional aggregation |
+| `/transactions/top-accounts` | GET | `GROUP BY account_id ORDER BY SUM(amount) DESC LIMIT :limit` |
+| `/transactions/{accountId}/anomalies` | GET | Subquery joining per-account `AVG` and `STDDEV`; filter `amount > mean + 2 × stddev` |
+| `/transactions/search` | GET | Dynamic `WHERE` clause built from any combination of `category`, `from`, `to`, `minAmount` |
+
+### Query reference
+
+**Running balance (window function)**
+```sql
+SELECT
+  account_id, timestamp, type, amount, description,
+  SUM(CASE WHEN type = 'CREDIT' THEN amount ELSE -amount END)
+    OVER (PARTITION BY account_id ORDER BY timestamp ROWS UNBOUNDED PRECEDING) AS running_balance
+FROM transactions
+WHERE account_id = :accountId
+ORDER BY timestamp
+```
+
+**Monthly summary (GROUP BY aggregation)**
+```sql
+SELECT
+  DATE_TRUNC('month', timestamp) AS month,
+  SUM(CASE WHEN type = 'CREDIT' THEN amount ELSE 0 END) AS total_credits,
+  SUM(CASE WHEN type = 'DEBIT'  THEN amount ELSE 0 END) AS total_debits,
+  SUM(CASE WHEN type = 'CREDIT' THEN amount ELSE -amount END) AS net_amount,
+  COUNT(*) AS transaction_count
+FROM transactions
+WHERE account_id = :accountId
+GROUP BY DATE_TRUNC('month', timestamp)
+ORDER BY month
+```
+
+**Anomaly detection (stddev subquery)**
+```sql
+SELECT t.*
+FROM transactions t
+JOIN (
+  SELECT account_id, AVG(amount) AS mean, STDDEV(amount) AS stddev
+  FROM transactions GROUP BY account_id
+) stats ON t.account_id = stats.account_id
+WHERE t.account_id = :accountId
+  AND t.amount > stats.mean + 2 * stats.stddev
+ORDER BY t.amount DESC
+```
+
+### In-memory profile
+
+All complex queries are reproduced as Java stream operations in
+`InMemoryTransactionRepository` (active under `--spring.profiles.active=in-memory`).
+This powers the test suite without requiring a database.
 
 ## Cross-service communication
 
@@ -245,6 +337,8 @@ curl http://localhost:8080/v1/accounts
 | `ACCOUNTS_R2DBC_URL` | accounts-service | `r2dbc:postgresql://localhost:5434/accountsdb` | R2DBC connection URL for accounts DB |
 | `CUSTOMERS_DB_USER` / `CUSTOMERS_DB_PASSWORD` | customers-service | `msa` / `msa` | PostgreSQL credentials for customers DB |
 | `ACCOUNTS_DB_USER` / `ACCOUNTS_DB_PASSWORD` | accounts-service | `msa` / `msa` | PostgreSQL credentials for accounts DB |
+| `TRANSACTIONS_R2DBC_URL` | transactions-service | `r2dbc:postgresql://localhost:5435/transactionsdb` | R2DBC connection URL for transactions DB |
+| `TRANSACTIONS_DB_USER` / `TRANSACTIONS_DB_PASSWORD` | transactions-service | `msa` / `msa` | PostgreSQL credentials for transactions DB |
 | `ZIPKIN_BASE_URL` | all | `http://localhost:9411` | Zipkin endpoint for trace export |
 | `JWT_SECRET` | gateway-service | *(built-in PoC key)* | Base64-encoded 256-bit HMAC-SHA256 secret |
 
@@ -273,7 +367,7 @@ Start all infrastructure (PostgreSQL + Zipkin) first:
 docker compose up -d
 ```
 
-Then open 3 terminals in `msa-poc`:
+Then open 4 terminals in `msa-poc`:
 
 ```bash
 # Terminal 1
@@ -284,6 +378,9 @@ mvn -pl accounts-service spring-boot:run
 
 # Terminal 3
 mvn -pl gateway-service spring-boot:run
+
+# Terminal 4
+mvn -pl transactions-service spring-boot:run
 ```
 
 Services:
@@ -291,11 +388,13 @@ Services:
 - Gateway: `http://localhost:8080`
 - Customers: `http://localhost:8081`
 - Accounts: `http://localhost:8082`
+- Transactions: `http://localhost:8083`
 
 Infrastructure:
 
 - Customers PostgreSQL: `localhost:5433` (`customersdb`)
 - Accounts PostgreSQL: `localhost:5434` (`accountsdb`)
+- Transactions PostgreSQL: `localhost:5435` (`transactionsdb`)
 - Zipkin UI: `http://localhost:9411`
 
 ### Generating a JWT for local requests
@@ -325,6 +424,18 @@ curl -i http://localhost:8080/v1/accounts
 
 # Circuit breaker + Zipkin — open Zipkin UI after this:
 # http://localhost:9411
+
+# --- transactions-service (through gateway) ---
+curl -H "$AUTH" http://localhost:8080/v1/transactions
+curl -H "$AUTH" http://localhost:8080/v1/transactions/tx-0001
+curl -H "$AUTH" http://localhost:8080/v1/transactions/a-001/running-balance
+curl -H "$AUTH" http://localhost:8080/v1/transactions/a-001/monthly-summary
+curl -H "$AUTH" http://localhost:8080/v1/transactions/top-accounts
+curl -H "$AUTH" "http://localhost:8080/v1/transactions/top-accounts?limit=3"
+curl -H "$AUTH" http://localhost:8080/v1/transactions/a-001/anomalies
+curl -H "$AUTH" "http://localhost:8080/v1/transactions/search?category=GROCERIES"
+curl -H "$AUTH" "http://localhost:8080/v1/transactions/search?category=SALARY&minAmount=1000"
+curl -H "$AUTH" "http://localhost:8080/v1/transactions/search?from=2024-01-01T00:00:00&to=2025-12-31T23:59:59"
 ```
 
 ## Unit testing
@@ -341,6 +452,7 @@ Run per module:
 mvn -pl customers-service test
 mvn -pl accounts-service test
 mvn -pl gateway-service test
+mvn -pl transactions-service test
 ```
 
 ### What is covered
@@ -352,6 +464,10 @@ mvn -pl gateway-service test
 - `GetAccountOwnerUseCaseTest` covers three scenarios: happy path, account not found (`404`), and customers-service unavailable (`503` fallback)
 - `CustomersClientIntegrationTest` — WireMock-backed integration test covering happy path, `5xx` fallback, and `4xx` fallback
 - `SecurityConfigTest` — `@SpringBootTest` verifying `401` for unauthenticated requests, public `/actuator/health`, and security layer pass-through for valid JWT
+- **`transactions-service`**
+  - `GetTransactionByIdUseCaseTest` — found and not-found (404) scenarios via mocked repository
+  - `InMemoryTransactionRepositoryTest` — exercises all complex query implementations (running balance, monthly summary, top accounts, anomaly detection, dynamic search) using the 100-row seeded dataset; no database required
+  - `TransactionControllerTest` — `@WebFluxTest` slice covering all 7 endpoints: response shape, 404 error mapping, and empty-list handling
 
 ## Notes
 
@@ -370,5 +486,7 @@ mvn -pl gateway-service test
 - ✅ Resilience4j circuit breaker + retry protecting the cross-service call.
 - ✅ Distributed tracing: Micrometer Tracing + Brave + Zipkin across all 3 services.
 - ✅ JWT authentication enforced at gateway edge (HMAC-SHA256, `spring-security-oauth2-resource-server`).
+- ✅ `transactions-service` is reactive end-to-end (WebFlux + `Flux`/`Mono` + R2DBC).
+- ✅ `transactions-service` demonstrates advanced SQL: window functions, GROUP BY aggregation, statistical outlier detection, and dynamic multi-filter search.
 - ✅ README and implementation instructions are aligned with reactive + PostgreSQL architecture.
 - ⚠️ Final runtime verification (`mvn test`) depends on local Maven availability.
