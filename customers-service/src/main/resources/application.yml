@@ -8,8 +8,12 @@ spring:
   sql:
     init:
       mode: always
+      schema-locations: classpath:db/schema.sql
+      data-locations: classpath:db/data.sql
   profiles:
     default: postgres
+  zipkin:
+    base-url: ${ZIPKIN_BASE_URL:http://localhost:9411}
 
 server:
   port: 8081
@@ -22,7 +26,3 @@ management:
   tracing:
     sampling:
       probability: 1.0
-
-spring:
-  zipkin:
-    base-url: ${ZIPKIN_BASE_URL:http://localhost:9411}

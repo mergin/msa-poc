@@ -19,7 +19,7 @@ It implements the backend contract used by the frontends for:
 - `GET /v1/transactions/{accountId}/anomalies` — statistical outliers (amount > mean + 2 × stddev)
 - `GET /v1/transactions/search` — multi-criteria dynamic query with optional filters
 
-The project is built with a reactive Spring Boot stack and a DDD-inspired structure.
+The project is built with a reactive Spring Boot stack and a feature-first service structure.
 
 ## Architecture
 
@@ -46,7 +46,7 @@ API Gateway (gateway-service, 8080)
   | StripPrefix=1
   v
 customers-service (8081)
-  [interfaces] Account/Customer Controller (REST endpoint)
+  [api] CustomerController (HTTP endpoint)
   |
   v
   [application] Use Case (application service)
@@ -55,7 +55,7 @@ customers-service (8081)
   [domain] Repository interface + domain model
   |
   v
-  [infrastructure] PostgreSQL Repository (R2DBC)
+  [infrastructure/persistence] PostgreSQL Repository (R2DBC)
   |
   v
 Response DTO (or 404 mapped by ApiExceptionHandler)
@@ -68,19 +68,19 @@ API Gateway -> Client
 flowchart TD
   C["Client<br/>MFE / curl"] -->|"GET /v1/customers/{id}"| G["API Gateway<br/>gateway-service:8080"]
   G -->|"Path /v1/customers/**<br/>StripPrefix=1"| S["customers-service:8081"]
-  S --> I["interfaces<br/>CustomerController"]
+  S --> I["customer/api<br/>CustomerController"]
   I --> A["application<br/>GetCustomerByIdUseCase / ListCustomersUseCase"]
   A --> D["domain<br/>Customer + CustomerRepository"]
-  D --> R["infrastructure<br/>PostgresCustomerRepository"]
+  D --> R["infrastructure/persistence<br/>PostgresCustomerRepository"]
     R --> E[Response DTO / Not Found]
     E --> G
     G --> C
 
   G -->|"Path /v1/accounts/**<br/>StripPrefix=1"| SA["accounts-service:8082"]
-  SA --> IA["interfaces<br/>AccountController"]
+  SA --> IA["account/api<br/>AccountController"]
   IA --> AA["application<br/>GetAccountByIdUseCase / ListAccountsUseCase"]
   AA --> DA["domain<br/>Account + AccountRepository"]
-  DA --> RA["infrastructure<br/>PostgresAccountRepository"]
+  DA --> RA["infrastructure/persistence<br/>PostgresAccountRepository"]
     RA --> EA[Response DTO / Not Found]
     EA --> G
 ```
@@ -115,35 +115,143 @@ Same flow applies to `/v1/accounts/**`, routed to `accounts-service` (8082).
   - Routes `/v1/customers/**`, `/v1/accounts/**`, and `/v1/transactions/**`
   - Central CORS for local MFE origins
   - JWT authentication via Spring Security OAuth2 Resource Server (HMAC-SHA256)
+  - Concern split under `security/...` with `GatewayServiceApplication` kept at the root package
 - `customers-service`
   - Reactive WebFlux API + reactive use cases
-  - DDD layers: domain, application, infrastructure, interfaces
+  - Feature-first package layout: `customer/api`, `customer/application`, `customer/domain`, `customer/infrastructure/persistence`
   - PostgreSQL adapter via R2DBC (`PostgresCustomerRepository`)
+  - SQL init assets grouped under `src/main/resources/db/`
 - `accounts-service`
   - Reactive WebFlux API + reactive use cases
-  - DDD layers: domain, application, infrastructure, interfaces
+  - Feature-first package layout: `account/api`, `account/application`, `account/domain`, `account/infrastructure/persistence`, plus `owner/...` for customer enrichment
   - PostgreSQL adapter via R2DBC (`PostgresAccountRepository`)
-  - `infrastructure/client` — `CustomersClient` (WebClient + Resilience4j circuit breaker)
+  - `owner/infrastructure/client` — `CustomersClient` (WebClient + Resilience4j circuit breaker)
+  - Shared API exception handling under `shared/api`
 - `transactions-service`
   - Reactive WebFlux API + reactive use cases
-  - DDD layers: domain, application, infrastructure, interfaces
+  - Feature-first package layout: `transaction/api`, `transaction/application`, `transaction/domain`, `transaction/infrastructure/persistence`, plus `analytics/...` for reporting and search
   - PostgreSQL adapter via R2DBC with raw `DatabaseClient` for complex analytical queries
   - Window functions, aggregations, statistical anomaly detection, and dynamic multi-filter search
+  - Shared error handling under `shared/api` and SQL init assets under `src/main/resources/db/`
 
-## DDD layering used in each bounded context
+## Repository structure
 
-Each business service (`customers-service`, `accounts-service`, `transactions-service`) follows this package structure:
+```text
+msa-poc/
+  .github/
+    instructions/
+    workflows/
+  accounts-service/
+  customers-service/
+  gateway-service/
+  transactions-service/
+  docs/
+    roadmap/
+      IMPLEMENTATION_ROADMAP.md
+      INSTRUCTIONS.md
+      MICROSERVICE_READINESS_CHECKLIST.md
+  platform/
+    docker/
+      docker-compose.yml
+  scripts/
+    generate-test-jwt.py
+  FILE_STRUCTURE_MIGRATION_PLAN.md
+  pom.xml
+  README.md
+```
 
-- `domain`
-  - Entities/value objects and repository interfaces
-- `application`
-  - Use cases (application services) orchestrating domain operations
-- `infrastructure`
-  - Reactive PostgreSQL repository implementations (PoC persistence)
-- `interfaces`
+## Service source layout
+
+Each business service keeps the Spring Boot application class at the top package and groups code by feature underneath it.
+
+```text
+customers-service/src/main/java/com/example/customersservice/
+  CustomersServiceApplication.java
+  customer/
+    api/
+    application/
+    domain/
+    infrastructure/
+      persistence/
+
+accounts-service/src/main/java/com/example/accountsservice/
+  AccountsServiceApplication.java
+  account/
+    api/
+    application/
+    domain/
+    infrastructure/
+      persistence/
+  owner/
+    api/
+    application/
+    infrastructure/
+      client/
+  shared/
+    api/
+
+gateway-service/src/main/java/com/example/gatewayservice/
+  GatewayServiceApplication.java
+  security/
+
+transactions-service/src/main/java/com/example/transactionsservice/
+  TransactionsServiceApplication.java
+  transaction/
+    api/
+    application/
+    domain/
+    infrastructure/
+      persistence/
+  analytics/
+    api/
+    application/
+    domain/
+    infrastructure/
+      persistence/
+  shared/
+    api/
+```
+
+## Service package structure
+
+`customers-service` now uses feature-first packaging under `customer/`:
+
+- `customer/api`
   - REST controllers, DTOs, and API exception mapping
+- `customer/application`
+  - Use cases orchestrating domain operations
+- `customer/domain`
+  - Entities, enums, and repository interfaces
+- `customer/infrastructure/persistence`
+  - Persistence adapters
 
-This keeps transport/infrastructure concerns separate from core domain logic.
+`accounts-service` now uses feature-first packaging under `account/`, `owner/`, and a small `shared/` area:
+
+- `account/api`, `account/application`, `account/domain`, `account/infrastructure/persistence`
+  - Core account CRUD and listing flow
+- `owner/api`, `owner/application`, `owner/infrastructure/client`
+  - Cross-service owner enrichment via `customers-service`
+- `shared/api`
+  - Cross-cutting API exception handling
+
+`transactions-service` now uses feature-first packaging under `transaction/` and `analytics/`:
+
+- `transaction/api`
+  - Basic transaction endpoints and response DTOs
+- `transaction/application`
+  - List/get transaction use cases
+- `transaction/domain`
+  - Core transaction model and repository interface
+- `transaction/infrastructure/persistence`
+  - Basic persistence adapters
+- `analytics/api`
+  - Reporting/search endpoints and analytical response DTOs
+- `analytics/application`
+  - Running balance, monthly summary, ranking, anomaly, and search use cases
+- `analytics/domain`
+  - Analytical projections and analytics repository interface
+- `analytics/infrastructure/persistence`
+  - Query-heavy analytics persistence adapters
 
 ## Implemented API contract
 
@@ -288,7 +396,7 @@ Circuit breaker health is exposed at `GET /actuator/health` and
 ## Distributed tracing
 
 All three services ship traces to a local [Zipkin](https://zipkin.io/) instance
-(added to `docker-compose.yml`) using Micrometer Tracing + Brave.
+(defined in `platform/docker/docker-compose.yml`) using Micrometer Tracing + Brave.
 
 - Sampling rate: **100%** (suitable for PoC, reduce for production)
 - Zipkin UI: `http://localhost:9411`
@@ -364,7 +472,7 @@ GitHub Actions runs the `CI` workflow on push and pull requests.
 Start all infrastructure (PostgreSQL + Zipkin) first:
 
 ```bash
-docker compose up -d
+docker compose -f platform/docker/docker-compose.yml up -d
 ```
 
 Then open 4 terminals in `msa-poc`:
